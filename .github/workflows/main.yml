@@ -52,29 +52,23 @@ jobs:
 
       - name: Install Android deployment dependencies
         run: |
-          echo "Python path: $(which python)"
-          echo "Installing dependencies..."
           pip install jinja2 pkginfo tqdm
-          
-          echo ""
-          echo "Verifying installation..."
-          pip list | grep -E "jinja2|pkginfo|tqdm"
-          
-          echo ""
-          echo "Testing imports..."
-          python -c "import jinja2, pkginfo, tqdm; print('✅ All dependencies imported successfully')"
-          
-          echo ""
-          echo "Checking pyside6-android-deploy location..."
-          which pyside6-android-deploy
 
+      # ✅ مرحله اولیه برای ایجاد فایل کانفیگ
+      - name: Initialize deployment config
+        run: |
+          pyside6-android-deploy --init \
+            --wheel-pyside="wheels/PySide6-${PYSIDE_VERSION}-${PYSIDE_VERSION}-cp311-cp311-android_aarch64.whl" \
+            --wheel-shiboken="wheels/shiboken6-${PYSIDE_VERSION}-${PYSIDE_VERSION}-cp311-cp311-android_aarch64.whl" \
+            --name="${APP_NAME}"
+
+      # ✅ مرحله ساخت APK بدون --main-file
       - name: Build APK with pyside6-android-deploy
         run: |
           pyside6-android-deploy \
             --wheel-pyside="wheels/PySide6-${PYSIDE_VERSION}-${PYSIDE_VERSION}-cp311-cp311-android_aarch64.whl" \
             --wheel-shiboken="wheels/shiboken6-${PYSIDE_VERSION}-${PYSIDE_VERSION}-cp311-cp311-android_aarch64.whl" \
-            --name="${APP_NAME}" \
-            --main-file="${ENTRY_POINT}"
+            --name="${APP_NAME}"
 
       - name: Locate generated APK
         id: find_apk
