@@ -52,12 +52,25 @@ jobs:
 
       - name: Install Android deployment dependencies
         run: |
-          python -m pip install -r /opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/site-packages/PySide6/scripts/requirements-android.txt
-          python -c "import jinja2, pkginfo, tqdm; print('Dependencies installed successfully')"
+          echo "Python path: $(which python)"
+          echo "Installing dependencies..."
+          pip install jinja2 pkginfo tqdm
+          
+          echo ""
+          echo "Verifying installation..."
+          pip list | grep -E "jinja2|pkginfo|tqdm"
+          
+          echo ""
+          echo "Testing imports..."
+          python -c "import jinja2, pkginfo, tqdm; print('✅ All dependencies imported successfully')"
+          
+          echo ""
+          echo "Checking pyside6-android-deploy location..."
+          which pyside6-android-deploy
 
       - name: Build APK with pyside6-android-deploy
         run: |
-          python -m PySide6.scripts.android_deploy \
+          pyside6-android-deploy \
             --wheel-pyside="wheels/PySide6-${PYSIDE_VERSION}-${PYSIDE_VERSION}-cp311-cp311-android_aarch64.whl" \
             --wheel-shiboken="wheels/shiboken6-${PYSIDE_VERSION}-${PYSIDE_VERSION}-cp311-cp311-android_aarch64.whl" \
             --name="${APP_NAME}" \
