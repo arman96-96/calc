@@ -1,21 +1,17 @@
 name: Build Android APK
 
-# اجرای دستی از تب Actions یا خودکار روی هر push به main
 on:
   workflow_dispatch:
   push:
     branches: [ main ]
 
 env:
-  # نسخه PySide6/Qt که هم wheel اندرویدی دارد و هم با pyside6-android-deploy سازگار است
   PYSIDE_VERSION: "6.10.3"
   APP_NAME: "calculator"
-  # فایل اصلی برنامه شما - در صورت نیاز تغییر دهید
   ENTRY_POINT: "calculator.py"
 
 jobs:
   build-apk:
-    # این کار فقط روی لینوکس اجرا می‌شود
     runs-on: ubuntu-latest
 
     steps:
@@ -44,7 +40,7 @@ jobs:
       - name: Install Python build tools
         run: |
           python -m pip install --upgrade pip
-          pip install pyside6==${{ env.PYSIDE_VERSION }} buildozer cython
+          python -m pip install pyside6==${{ env.PYSIDE_VERSION }} buildozer cython
 
       - name: Download PySide6 / shiboken6 Android wheels (arm64-v8a)
         run: |
@@ -54,9 +50,14 @@ jobs:
           curl -fLO "https://download.qt.io/official_releases/QtForPython/shiboken6/shiboken6-${PYSIDE_VERSION}-${PYSIDE_VERSION}-cp311-cp311-android_aarch64.whl"
           ls -la
 
+      - name: Install Android deployment dependencies
+        run: |
+          python -m pip install -r /opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/site-packages/PySide6/scripts/requirements-android.txt
+          python -c "import jinja2, pkginfo, tqdm; print('Dependencies installed successfully')"
+
       - name: Build APK with pyside6-android-deploy
         run: |
-          pyside6-android-deploy \
+          python -m PySide6.scripts.android_deploy \
             --wheel-pyside="wheels/PySide6-${PYSIDE_VERSION}-${PYSIDE_VERSION}-cp311-cp311-android_aarch64.whl" \
             --wheel-shiboken="wheels/shiboken6-${PYSIDE_VERSION}-${PYSIDE_VERSION}-cp311-cp311-android_aarch64.whl" \
             --name="${APP_NAME}" \
