@@ -1,0 +1,83 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+env:
+  PYSIDE_VERSION: "6.10.3"
+  APP_NAME: "calculator"
+  ENTRY_POINT: "calculator.py"
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential git unzip zip \
+            autoconf automake libtool pkg-config \
+            libffi-dev libssl-dev
+
+      # ✅ همه چیز در یک مرحله: venv + install + build
+      - name: Build APK in virtual environment
+        run: |
+          echo "Creating virtual environment..."
+          python -m venv build_env
+          source build_env/bin/activate
+          
+          echo "VIRTUAL_ENV is: $VIRTUAL_ENV"
+          echo "Python is: $(which python)"
+          
+          echo "Installing dependencies in venv..."
+          pip install --upgrade pip
+          pip install pyside6==${{ env.PYSIDE_VERSION }} buildozer cython
+          pip install jinja2 pkginfo tqdm
+          
+          echo "Downloading Android wheels..."
+          mkdir -p wheels
+          cd wheels
+          curl -fLO "https://download.qt.io/official_releases/QtForPython/pyside6/PySide6-${PYSIDE_VERSION}-${PYSIDE_VERSION}-cp311-cp311-android_aarch64.whl"
+          curl -fLO "https://download.qt.io/official_releases/QtForPython/shiboken6/shiboken6-${PYSIDE_VERSION}-${PYSIDE_VERSION}-cp311-cp311-android_aarch64.whl"
+          cd ..
+          
+          echo "Preparing main.py..."
+          cp "${ENTRY_POINT}" main.py
+          
+          echo "Running pyside6-android-deploy..."
+          pyside6-android-deploy \
+            --wheel-pyside="wheels/PySide6-${PYSIDE_VERSION}-${PYSIDE_VERSION}-cp311-cp311-android_aarch64.whl" \
+            --wheel-shiboken="wheels/shiboken6-${PYSIDE_VERSION}-${PYSIDE_VERSION}-cp311-cp311-android_aarch64.whl" \
+            --name="${APP_NAME}"
+
+      - name: Locate generated APK
+        id: find_apk
+        run: |
+          APK_PATH=$(find . -name "*.apk" -not -path "*/wheels/*" -not -path "*/build_env/*" | head -n 1)
+          echo "apk_path=$APK_PATH" >> "$GITHUB_OUTPUT"
+          echo "Found APK at: $APK_PATH"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APP_NAME }}-apk
+          path: ${{ steps.find_apk.outputs.apk_path }}
+          if-no-files-found: error
