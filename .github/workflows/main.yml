@@ -13,13 +13,10 @@ jobs:
         with:
           python-version: '3.9'
       
-      - name: Install system dependencies
+      - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y git zip unzip openjdk-17-jdk autoconf libtool pkg-config zlib1g-dev libncurses5-dev libffi-dev libssl-dev cmake wget
-      
-      - name: Install buildozer
-        run: |
           pip install --upgrade pip
           pip install buildozer cython
       
@@ -68,39 +65,31 @@ jobs:
           android.ndk = 23b
           android.minapi = 21
           android.accept_sdk_license = True
-          android.gradle_dependencies = 
           
           [buildozer]
           log_level = 2
           warn_on_root = 1
           EOF
       
-      - name: Clean buildozer cache
+      - name: Build APK with detailed logging
         run: |
-          rm -rf .buildozer || true
-          rm -rf ~/.buildozer || true
-      
-      - name: Build APK with full logs
-        run: |
-          buildozer android debug --verbose 2>&1 | tee build.log
+          # اجرای buildozer با گرفتن لاگ کامل
+          buildozer android debug --verbose 2>&1 | tee build_full.log
+          exit_code=${PIPESTATUS[0]}
           
-          # اگر خطا داشت، لاگ کامل را نمایش بده
-          if [ $? -ne 0 ]; then
-            echo "=== BUILD FAILED ==="
-            echo "Last 100 lines of build log:"
-            tail -n 100 build.log
-            echo ""
-            echo "Searching for errors in log:"
-            grep -i "error\|failed\|exception" build.log || echo "No obvious errors found"
-            exit 1
+          if [ $exit_code -ne 0 ]; then
+            echo "Build failed with exit code: $exit_code"
+            echo "=== Full build log ==="
+            cat build_full.log
+            exit $exit_code
           fi
       
-      - name: Upload build log (if failed)
+      - name: Upload build log
         uses: actions/upload-artifact@v4
-        if: failure()
+        if: always()
         with:
           name: build-log
-          path: build.log
+          path: build_full.log
       
       - name: Upload APK
         uses: actions/upload-artifact@v4
