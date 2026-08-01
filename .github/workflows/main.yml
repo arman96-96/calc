@@ -38,12 +38,35 @@ jobs:
           sdkmanager --install "ndk;27.0.12077973"
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973" >> $GITHUB_ENV
 
-      # ✅ پیش‌نصب اجزای SDK با ابزار مدرن تا buildozer سراغ ابزار قدیمی نرود
       - name: Pre-install Android SDK components
         run: |
-          echo "Pre-installing platform-tools to prevent buildozer sdkmanager errors..."
+          echo "Pre-installing required SDK components with modern cmdline-tools..."
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-34"
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+
+      - name: Fix Buildozer sdkmanager (Prevent XML parsing hang)
+        run: |
+          echo "Replacing broken legacy 'tools/bin/sdkmanager' with a CI-safe dummy..."
+          rm -rf $ANDROID_HOME/tools
+          mkdir -p $ANDROID_HOME/tools/bin
+          cat << 'EOF' > $ANDROID_HOME/tools/bin/sdkmanager
+#!/bin/bash
+# Dummy sdkmanager for buildozer in CI environments.
+# We pre-install all required components, so we just report them as installed.
+if [[ "$*" == *"--list"* ]] || [[ "$*" == *"--update"* ]]; then
+  echo "Installed packages:"
+  echo "  platform-tools"
+  echo "  platforms;android-34"
+  echo "  build-tools;34.0.0"
+  echo "  ndk;27.0.12077973"
+  echo "  cmake;3.22.1"
+else
+  echo "Dummy sdkmanager executed with: $*"
+fi
+exit 0
+EOF
+          chmod +x $ANDROID_HOME/tools/bin/sdkmanager
+          echo "✅ Dummy sdkmanager created successfully."
 
       - name: Install system dependencies
         run: |
@@ -68,27 +91,31 @@ jobs:
           cp "${{ env.ENTRY_POINT }}" main.py
           echo "✅ Created main.py"
 
-      # ✅ مرحله ساخت با جاوا ۸ و مدیریت صحیح خطا
       - name: Build APK
         id: build
         run: |
           set -e
-          set -o pipefail # ✅ اطمینان از گزارش خطای واقعی دستور
+          set -o pipefail
           
-          # ✅ تغییر موقت به Java 8 برای سازگاری با buildozer sdkmanager
+          echo "=== تنظیمات محیطی قبل از ساخت ==="
+          echo "Java version: $(java -version 2>&1 | head -n 1)"
+          echo "Python: $(python --version)"
+          
+          # تغییر به جاوا ۸ برای سازگاری بهتر با برخی اسکریپت‌های قدیمی buildozer
           export JAVA_HOME=/usr/lib/jvm/temurin-8-jdk-amd64
           export PATH=$JAVA_HOME/bin:$PATH
-          echo "🔧 Using Java version for buildozer: $(java -version 2>&1 | head -n 1)"
+          echo "🔧 Switched Java to: $(java -version 2>&1 | head -n 1)"
           
-          echo "=== Starting pyside6-android-deploy ==="
-          pyside6-android-deploy --force \
+          echo "=== شروع فرآیند pyside6-android-deploy ==="
+          
+          pyside6-android-deploy --force --verbose \
             --sdk-path="$ANDROID_HOME" \
             --ndk-path="$ANDROID_NDK_HOME" \
             --wheel-pyside="wheels/PySide6-${{ env.PYSIDE_VERSION }}-${{ env.PYSIDE_VERSION }}-cp311-cp311-android_aarch64.whl" \
             --wheel-shiboken="wheels/shiboken6-${{ env.PYSIDE_VERSION }}-${{ env.PYSIDE_VERSION }}-cp311-cp311-android_aarch64.whl" \
             --name="${{ env.APP_NAME }}"
           
-          echo "✅ Build process finished successfully"
+          echo "✅ فرآیند ساخت تکمیل شد."
 
       - name: Find APK
         id: find_apk
@@ -97,8 +124,9 @@ jobs:
           APK_PATH=$(find . -type f -name "*.apk" -not -path "*/wheels/*" | head -n 1)
           
           if [ -z "$APK_PATH" ]; then
-            echo "❌ هیچ فایل APK ساخته نشد!"
-            find . -maxdepth 4 -type d | grep -v "\.git/"
+            echo "❌ هیچ فایل APK ساخته نشد."
+            echo "📂 ساختار پوشه‌ها:"
+            find . -maxdepth 3 -type d | grep -v "\.git/"
             exit 1
           fi
           
