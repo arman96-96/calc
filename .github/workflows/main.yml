@@ -1,21 +1,17 @@
 name: Build Android APK
 
-# اجرای دستی از تب Actions یا خودکار روی هر push به main
 on:
   workflow_dispatch:
   push:
     branches: [ main ]
 
 env:
-  # نسخه PySide6/Qt که هم wheel اندرویدی دارد و هم با pyside6-android-deploy سازگار است
   PYSIDE_VERSION: "6.10.3"
   APP_NAME: "calculator"
-  # نام واقعی فایل برنامه‌ی شما در ریپو - اگر نامش چیز دیگری است همین را تغییر دهید
   SOURCE_FILE: "calculator.py"
 
 jobs:
   build-apk:
-    # این کار فقط روی لینوکس اجرا می‌شود
     runs-on: ubuntu-latest
 
     steps:
@@ -33,20 +29,44 @@ jobs:
           distribution: "temurin"
           java-version: "17"
 
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK and pre-install SDK components
+        run: |
+          # قبول لایسنس‌ها
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          
+          # نصب NDK و کامپوننت‌های ضروری با ابزار مدرن cmdline-tools
+          sdkmanager --install "ndk;27.0.12077973" "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+          
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973" >> $GITHUB_ENV
+
+      - name: Neutralize legacy buildozer sdkmanager (CRITICAL FIX)
+        run: |
+          # بیلدوزر به اشتباه سعی می‌کند از sdkmanager قدیمی و منسوخ‌شده استفاده کند که باعث هنگ کردن می‌شود.
+          # ما آن را با یک اسکریپت ساختگی جایگزین می‌کنیم که همیشه موفقیت‌آمیز برمی‌گردد.
+          rm -rf $ANDROID_HOME/tools
+          mkdir -p $ANDROID_HOME/tools/bin
+          echo '#!/bin/bash' > $ANDROID_HOME/tools/bin/sdkmanager
+          echo 'echo "Installed packages:"' >> $ANDROID_HOME/tools/bin/sdkmanager
+          echo 'echo "  platform-tools"' >> $ANDROID_HOME/tools/bin/sdkmanager
+          echo 'echo "  platforms;android-34"' >> $ANDROID_HOME/tools/bin/sdkmanager
+          echo 'echo "  build-tools;34.0.0"' >> $ANDROID_HOME/tools/bin/sdkmanager
+          echo 'echo "  ndk;27.0.12077973"' >> $ANDROID_HOME/tools/bin/sdkmanager
+          echo 'exit 0' >> $ANDROID_HOME/tools/bin/sdkmanager
+          chmod +x $ANDROID_HOME/tools/bin/sdkmanager
+          echo "✅ Legacy sdkmanager neutralized."
+
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            build-essential git unzip zip \
-            autoconf automake libtool pkg-config \
-            libffi-dev libssl-dev
+          sudo apt-get install -y build-essential git unzip zip autoconf automake libtool pkg-config libffi-dev libssl-dev
 
       - name: Create virtual environment
         run: |
           python -m venv .venv
-          # اضافه کردن bin مربوط به venv به PATH برای همه‌ی مراحل بعدی این job
           echo "$(pwd)/.venv/bin" >> "$GITHUB_PATH"
-          # این متغیر همان چیزی است که ابزار deploy برای تشخیص venv بررسی می‌کند
           echo "VIRTUAL_ENV=$(pwd)/.venv" >> "$GITHUB_ENV"
 
       - name: Install Python build tools
@@ -56,58 +76,62 @@ jobs:
 
       - name: Install pyside6-android-deploy requirements
         run: |
-          # این پکیج‌ها را خود اسکریپت deploy می‌خواهد و به‌صورت پیش‌فرض نصب نیستند
           REQ_FILE=$(python -c "import PySide6, os; print(os.path.join(os.path.dirname(PySide6.__file__), 'scripts', 'requirements-android.txt'))")
           echo "Requirements file: $REQ_FILE"
           pip install -r "$REQ_FILE"
 
       - name: Prepare entry point as main.py
         run: |
-          # pyside6-android-deploy به‌طور پیش‌فرض دنبال main.py می‌گردد
-          # و آرگومانی برای مشخص کردن نام فایل ورودی ندارد
           if [ "${SOURCE_FILE}" != "main.py" ]; then
             cp "${SOURCE_FILE}" main.py
           fi
+          echo "✅ main.py is ready."
 
-      - name: Download PySide6 / shiboken6 Android wheels (arm64-v8a)
+      - name: Download PySide6 / shiboken6 Android wheels
         run: |
           mkdir -p wheels
           cd wheels
-          curl -fLO "https://download.qt.io/official_releases/QtForPython/pyside6/PySide6-${PYSIDE_VERSION}-${PYSIDE_VERSION}-cp311-cp311-android_aarch64.whl"
-          curl -fLO "https://download.qt.io/official_releases/QtForPython/shiboken6/shiboken6-${PYSIDE_VERSION}-${PYSIDE_VERSION}-cp311-cp311-android_aarch64.whl"
+          curl -fLO "https://download.qt.io/official_releases/QtForPython/pyside6/PySide6-${{ env.PYSIDE_VERSION }}-${{ env.PYSIDE_VERSION }}-cp311-cp311-android_aarch64.whl"
+          curl -fLO "https://download.qt.io/official_releases/QtForPython/shiboken6/shiboken6-${{ env.PYSIDE_VERSION }}-${{ env.PYSIDE_VERSION }}-cp311-cp311-android_aarch64.whl"
           ls -la
 
       - name: Build APK with pyside6-android-deploy
         run: |
+          set -e
           set -o pipefail
-          # </dev/null یعنی اگر ابزار سؤالی بپرسد و منتظر ورودی بماند،
-          # بلافاصله EOF می‌گیرد و به‌جای هنگ کردن، خطای واضح می‌دهد که در لاگ می‌بینیم
+          
+          echo "=== Starting Build ==="
+          echo "SDK: $ANDROID_HOME"
+          echo "NDK: $ANDROID_NDK_HOME"
+          
           pyside6-android-deploy \
             --force \
             -v \
-            --wheel-pyside="wheels/PySide6-${PYSIDE_VERSION}-${PYSIDE_VERSION}-cp311-cp311-android_aarch64.whl" \
-            --wheel-shiboken="wheels/shiboken6-${PYSIDE_VERSION}-${PYSIDE_VERSION}-cp311-cp311-android_aarch64.whl" \
-            --name="${APP_NAME}" \
+            --sdk-path="$ANDROID_HOME" \
+            --ndk-path="$ANDROID_NDK_HOME" \
+            --wheel-pyside="wheels/PySide6-${{ env.PYSIDE_VERSION }}-${{ env.PYSIDE_VERSION }}-cp311-cp311-android_aarch64.whl" \
+            --wheel-shiboken="wheels/shiboken6-${{ env.PYSIDE_VERSION }}-${{ env.PYSIDE_VERSION }}-cp311-cp311-android_aarch64.whl" \
+            --name="${{ env.APP_NAME }}" \
             < /dev/null 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
+          
+          echo "✅ Build command finished."
 
       - name: Locate generated APK
         id: find_apk
         run: |
-          # جست‌وجو در کل مسیر workspace، نه فقط پوشه فعلی
           APK_PATH=$(find "$GITHUB_WORKSPACE" -type f \( -iname "*.apk" -o -iname "*.aab" \) -not -path "*/wheels/*" 2>/dev/null | head -n 1)
 
           if [ -z "$APK_PATH" ]; then
-            echo "هیچ فایل apk یا aab پیدا نشد. لیست فایل‌های ساخته‌شده برای بررسی:"
-            find "$GITHUB_WORKSPACE" -maxdepth 4 -type d
-            echo "---"
-            find "$GITHUB_WORKSPACE" -iname "*.apk" -o -iname "*.aab" -o -iname "*.log"
+            echo "❌ هیچ فایل apk یا aab پیدا نشد."
+            echo "📂 ساختار پوشه‌ها:"
+            find "$GITHUB_WORKSPACE" -maxdepth 4 -type d | grep -v "\.git/"
             exit 1
           fi
 
+          echo "✅ Found package at: $APK_PATH"
           echo "apk_path=$APK_PATH" >> "$GITHUB_OUTPUT"
-          echo "Found package at: $APK_PATH"
 
-      - name: Upload build log (always, for debugging)
+      - name: Upload build log
         if: always()
         uses: actions/upload-artifact@v4
         with:
