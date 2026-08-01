@@ -37,15 +37,6 @@ jobs:
           ls -la
           find . -maxdepth 3 -type f -name "*.py" -print
 
-      # IMPORTANT: این مسیر/نام فایل را با نام واقعی فایل در ریپو جایگزین کن.
-      # اگر فایل اصلی همین "main.py" است، این step را حذف کن یا به همین شکل نگه دار.
-      - name: Prepare main.py
-        run: |
-          # اگر فایل شما همین الان main.py است، این کامنت را بردار و مرحله cp را حذف کن.
-          # ls -la
-          # (در غیر این صورت، مسیر فایل اصلی را درست کن)
-          cp main.py main.py
-
       - name: Download Android wheels
         run: |
           mkdir -p wheels
