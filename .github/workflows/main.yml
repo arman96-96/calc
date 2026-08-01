@@ -6,7 +6,7 @@ on:
     branches: [ main ]
 
 env:
-  PYSIDE_VERSION: "6.8.0.2"
+  PYSIDE_VERSION: "6.7.1"  # نسخه پایدارتر با پشتیبانی اندروید
   APP_NAME: "calculator"
 
 jobs:
@@ -57,17 +57,37 @@ jobs:
           mkdir -p wheels
           cd wheels
           
-          echo "Downloading wheels for cp311..."
-          curl -fLO "https://download.qt.io/official_releases/QtForPython/pyside6/PySide6-${{ env.PYSIDE_VERSION }}-${{ env.PYSIDE_VERSION }}-cp311-cp311-android_aarch64.whl" || true
-          curl -fLO "https://download.qt.io/official_releases/QtForPython/shiboken6/shiboken6-${{ env.PYSIDE_VERSION }}-${{ env.PYSIDE_VERSION }}-cp311-cp311-android_aarch64.whl" || true
+          # فرمت صحیح URL برای نسخه 6.7.1
+          # برای Python 3.11
+          PYSIDE_WHEEL="PySide6-6.7.1-6.7.1-cp311-cp311-android_aarch64.whl"
+          SHIBOKEN_WHEEL="shiboken6-6.7.1-6.7.1-cp311-cp311-android_aarch64.whl"
           
-          if [ ! -f "PySide6-${{ env.PYSIDE_VERSION }}-${{ env.PYSIDE_VERSION }}-cp311-cp311-android_aarch64.whl" ]; then
-            echo "cp311 wheels not found, trying cp310..."
-            curl -fLO "https://download.qt.io/official_releases/QtForPython/pyside6/PySide6-${{ env.PYSIDE_VERSION }}-${{ env.PYSIDE_VERSION }}-cp310-cp310-android_aarch64.whl"
-            curl -fLO "https://download.qt.io/official_releases/QtForPython/shiboken6/shiboken6-${{ env.PYSIDE_VERSION }}-${{ env.PYSIDE_VERSION }}-cp310-cp310-android_aarch64.whl"
+          echo "Trying to download: $PYSIDE_WHEEL"
+          curl -fLO "https://download.qt.io/official_releases/QtForPython/pyside6/$PYSIDE_WHEEL" || echo "Failed to download $PYSIDE_WHEEL"
+          curl -fLO "https://download.qt.io/official_releases/QtForPython/shiboken6/$SHIBOKEN_WHEEL" || echo "Failed to download $SHIBOKEN_WHEEL"
+          
+          # اگر نسخه 6.7.1 کار نکرد، نسخه 6.6.0 را امتحان کن
+          if [ ! -f "$PYSIDE_WHEEL" ]; then
+            echo "Trying version 6.6.0..."
+            PYSIDE_WHEEL="PySide6-6.6.0-6.6.0-cp311-cp311-android_aarch64.whl"
+            SHIBOKEN_WHEEL="shiboken6-6.6.0-6.6.0-cp311-cp311-android_aarch64.whl"
+            
+            curl -fLO "https://download.qt.io/official_releases/QtForPython/pyside6/$PYSIDE_WHEEL" || echo "Failed to download $PYSIDE_WHEEL"
+            curl -fLO "https://download.qt.io/official_releases/QtForPython/shiboken6/$SHIBOKEN_WHEEL" || echo "Failed to download $SHIBOKEN_WHEEL"
+          fi
+          
+          # اگر باز هم کار نکرد، برای Python 3.10 امتحان کن
+          if [ ! -f "$PYSIDE_WHEEL" ]; then
+            echo "Trying Python 3.10 version..."
+            PYSIDE_WHEEL="PySide6-6.6.0-6.6.0-cp310-cp310-android_aarch64.whl"
+            SHIBOKEN_WHEEL="shiboken6-6.6.0-6.6.0-cp310-cp310-android_aarch64.whl"
+            
+            curl -fLO "https://download.qt.io/official_releases/QtForPython/pyside6/$PYSIDE_WHEEL" || echo "Failed to download $PYSIDE_WHEEL"
+            curl -fLO "https://download.qt.io/official_releases/QtForPython/shiboken6/$SHIBOKEN_WHEEL" || echo "Failed to download $SHIBOKEN_WHEEL"
           fi
           
           cd ..
+          echo "Wheels directory contents:"
           ls -la wheels/
 
       - name: Build APK
@@ -78,12 +98,13 @@ jobs:
           SHIBOKEN_WHEEL=$(ls wheels/shiboken6-*.whl 2>/dev/null | head -n 1)
           
           if [ -z "$PYSIDE_WHEEL" ] || [ -z "$SHIBOKEN_WHEEL" ]; then
-            echo "Error: Wheel files not found!"
+            echo "❌ Error: Wheel files not found!"
+            echo "Available files in wheels/:"
             ls -la wheels/
             exit 1
           fi
           
-          echo "Using wheels:"
+          echo "✅ Using wheels:"
           echo "PySide: $PYSIDE_WHEEL"
           echo "Shiboken: $SHIBOKEN_WHEEL"
           
