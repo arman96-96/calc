@@ -37,12 +37,25 @@ jobs:
           ls -la
           find . -maxdepth 3 -type f -name "*.py" -print
 
-      - name: Download Android wheels
+      - name: Download Android wheels (check URLs first)
         run: |
+          set -e
           mkdir -p wheels
+
+          P="${{ env.PYSIDE_VERSION }}"
+          U1="https://download.qt.io/official_releases/QtForPython/pyside6/PySide6-${P}-${P}-cp311-cp311-android_aarch64.whl"
+          U2="https://download.qt.io/official_releases/QtForPython/shiboken6/shiboken6-${P}-${P}-cp311-cp311-android_aarch64.whl"
+
+          echo "Testing wheel URLs..."
+          echo "$U1"
+          curl -I -fL "$U1"
+          echo "$U2"
+          curl -I -fL "$U2"
+
+          echo "Downloading wheels..."
           cd wheels
-          curl -fLO "https://download.qt.io/official_releases/QtForPython/pyside6/PySide6-${{ env.PYSIDE_VERSION }}-${{ env.PYSIDE_VERSION }}-cp311-cp311-android_aarch64.whl"
-          curl -fLO "https://download.qt.io/official_releases/QtForPython/shiboken6/shiboken6-${{ env.PYSIDE_VERSION }}-${{ env.PYSIDE_VERSION }}-cp311-cp311-android_aarch64.whl"
+          curl -fLO "$U1"
+          curl -fLO "$U2"
 
       - name: Build APK
         env:
@@ -52,10 +65,6 @@ jobs:
             --wheel-pyside="wheels/PySide6-${{ env.PYSIDE_VERSION }}-${{ env.PYSIDE_VERSION }}-cp311-cp311-android_aarch64.whl" \
             --wheel-shiboken="wheels/shiboken6-${{ env.PYSIDE_VERSION }}-${{ env.PYSIDE_VERSION }}-cp311-cp311-android_aarch64.whl" \
             --name="${{ env.APP_NAME }}"
-
-      - name: List generated files
-        run: |
-          ls -R
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
