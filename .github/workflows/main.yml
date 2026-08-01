@@ -46,6 +46,8 @@ jobs:
           python -m venv .venv
           # اضافه کردن bin مربوط به venv به PATH برای همه‌ی مراحل بعدی این job
           echo "$(pwd)/.venv/bin" >> "$GITHUB_PATH"
+          # این متغیر همان چیزی است که ابزار deploy برای تشخیص venv بررسی می‌کند
+          echo "VIRTUAL_ENV=$(pwd)/.venv" >> "$GITHUB_ENV"
 
       - name: Install Python build tools
         run: |
@@ -78,6 +80,7 @@ jobs:
       - name: Build APK with pyside6-android-deploy
         run: |
           pyside6-android-deploy \
+            --force \
             --wheel-pyside="wheels/PySide6-${PYSIDE_VERSION}-${PYSIDE_VERSION}-cp311-cp311-android_aarch64.whl" \
             --wheel-shiboken="wheels/shiboken6-${PYSIDE_VERSION}-${PYSIDE_VERSION}-cp311-cp311-android_aarch64.whl" \
             --name="${APP_NAME}"
