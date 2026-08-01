@@ -35,24 +35,24 @@ jobs:
           set -e
           python -m pip install --upgrade pip
 
-      - name: Install PySide6 (fail fast)
+      - name: Install PySide6 + verify immediately (single step)
         run: |
-          set -e
-          pip install -v "pyside6==${{ env.PYSIDE_VERSION }}"
+          set -euo pipefail
+          echo "Installing: pyside6==${{ env.PYSIDE_VERSION }}"
+          python -m pip install -v "pyside6==${{ env.PYSIDE_VERSION }}"
 
-      - name: Show pip package info after install
-        run: |
-          set -e
-          python -c "import sys, site; print('sys.executable=', sys.executable); print('site-packages=', site.getsitepackages()); print('user-site=', site.getusersitepackages())"
+          echo "pip show:"
           python -m pip show pyside6 || true
+
+          echo "Installed pyside-related packages:"
           python -m pip list | grep -i pyside || true
-          python -c "import pkgutil; print('has pyside6?', any(m.name=='pyside6' for m in pkgutil.iter_modules()))"
 
-      - name: Verify pyside6 import
-        run: |
-          set -e
+          echo "Python executable:"
+          python -c "import sys; print(sys.executable)"
+
+          echo "Trying import..."
           python -c "import pyside6; print('pyside6', pyside6.__version__)"
-
+        
       - name: Download Android wheels (try cp310/cp311)
         run: |
           set -e
@@ -76,6 +76,12 @@ jobs:
 
           ls -la wheels
 
+      - name: Set up JDK 11
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "11"
+
       - name: Build APK
         env:
           VIRTUAL_ENV: "/tmp/fake_venv"
@@ -83,6 +89,7 @@ jobs:
           set -e
           pyside_wheel="$(ls -1 wheels/PySide6-*.whl | head -n 1)"
           shiboken_wheel="$(ls -1 wheels/shiboken6-*.whl | head -n 1)"
+
           echo "Using wheels:"
           echo "$pyside_wheel"
           echo "$shiboken_wheel"
