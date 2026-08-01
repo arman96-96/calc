@@ -6,7 +6,6 @@ on:
     branches: [ main ]
 
 env:
-  PYSIDE_VERSION: "6.7.1"  # نسخه پایدارتر با پشتیبانی اندروید
   APP_NAME: "calculator"
 
 jobs:
@@ -29,106 +28,99 @@ jobs:
 
       - name: Install dependencies
         run: |
+          sudo apt-get update
+          sudo apt-get install -y git zip unzip openjdk-11-jdk
           python -m pip install --upgrade pip
-          pip install pyside6==${{ env.PYSIDE_VERSION }}
+          pip install pyside6==6.7.1
           pip install buildozer cython
 
       - name: Verify PySide6 installation
         run: |
           python -c "import PySide6; print(f'PySide6 version: {PySide6.__version__}')"
-          python -c "from PySide6.QtCore import qVersion; print(f'Qt version: {qVersion()}')"
 
       - name: Prepare main.py
         run: |
           if [ -f "main.py" ]; then
             echo "✅ main.py found"
           elif [ -f "calculator.py" ]; then
-            echo "📁 Copying calculator.py to main.py"
             cp calculator.py main.py
           else
-            echo "❌ Error: Neither main.py nor calculator.py found!"
-            echo "Files in current directory:"
-            ls -la
+            echo "❌ Error: main.py not found!"
             exit 1
           fi
 
-      - name: Download Android wheels
+      - name: Install Android SDK and NDK
         run: |
-          mkdir -p wheels
-          cd wheels
+          export ANDROID_SDK_ROOT=$HOME/android-sdk
+          export ANDROID_NDK_ROOT=$HOME/android-ndk
           
-          # فرمت صحیح URL برای نسخه 6.7.1
-          # برای Python 3.11
-          PYSIDE_WHEEL="PySide6-6.7.1-6.7.1-cp311-cp311-android_aarch64.whl"
-          SHIBOKEN_WHEEL="shiboken6-6.7.1-6.7.1-cp311-cp311-android_aarch64.whl"
+          # Download Android SDK
+          mkdir -p $ANDROID_SDK_ROOT
+          cd $ANDROID_SDK_ROOT
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
+          unzip -q commandlinetools-linux-9477386_latest.zip
+          rm commandlinetools-linux-9477386_latest.zip
           
-          echo "Trying to download: $PYSIDE_WHEEL"
-          curl -fLO "https://download.qt.io/official_releases/QtForPython/pyside6/$PYSIDE_WHEEL" || echo "Failed to download $PYSIDE_WHEEL"
-          curl -fLO "https://download.qt.io/official_releases/QtForPython/shiboken6/$SHIBOKEN_WHEEL" || echo "Failed to download $SHIBOKEN_WHEEL"
+          # Install SDK components
+          yes | ./cmdline-tools/bin/sdkmanager --sdk_root=$ANDROID_SDK_ROOT "platforms;android-33" "build-tools;33.0.0" "platform-tools"
           
-          # اگر نسخه 6.7.1 کار نکرد، نسخه 6.6.0 را امتحان کن
-          if [ ! -f "$PYSIDE_WHEEL" ]; then
-            echo "Trying version 6.6.0..."
-            PYSIDE_WHEEL="PySide6-6.6.0-6.6.0-cp311-cp311-android_aarch64.whl"
-            SHIBOKEN_WHEEL="shiboken6-6.6.0-6.6.0-cp311-cp311-android_aarch64.whl"
-            
-            curl -fLO "https://download.qt.io/official_releases/QtForPython/pyside6/$PYSIDE_WHEEL" || echo "Failed to download $PYSIDE_WHEEL"
-            curl -fLO "https://download.qt.io/official_releases/QtForPython/shiboken6/$SHIBOKEN_WHEEL" || echo "Failed to download $SHIBOKEN_WHEEL"
-          fi
+          # Download Android NDK
+          cd $HOME
+          wget -q https://dl.google.com/android/repository/android-ndk-r25c-linux.zip
+          unzip -q android-ndk-r25c-linux.zip
+          rm android-ndk-r25c-linux.zip
           
-          # اگر باز هم کار نکرد، برای Python 3.10 امتحان کن
-          if [ ! -f "$PYSIDE_WHEEL" ]; then
-            echo "Trying Python 3.10 version..."
-            PYSIDE_WHEEL="PySide6-6.6.0-6.6.0-cp310-cp310-android_aarch64.whl"
-            SHIBOKEN_WHEEL="shiboken6-6.6.0-6.6.0-cp310-cp310-android_aarch64.whl"
-            
-            curl -fLO "https://download.qt.io/official_releases/QtForPython/pyside6/$PYSIDE_WHEEL" || echo "Failed to download $PYSIDE_WHEEL"
-            curl -fLO "https://download.qt.io/official_releases/QtForPython/shiboken6/$SHIBOKEN_WHEEL" || echo "Failed to download $SHIBOKEN_WHEEL"
-          fi
-          
-          cd ..
-          echo "Wheels directory contents:"
-          ls -la wheels/
+          echo "Android SDK and NDK installed"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
+          echo "ANDROID_NDK_ROOT=$HOME/android-ndk-r25c" >> $GITHUB_ENV
 
-      - name: Build APK
-        env:
-          VIRTUAL_ENV: "/tmp/fake_venv"
+      - name: Build with pyside6-android-deploy
         run: |
-          PYSIDE_WHEEL=$(ls wheels/PySide6-*.whl 2>/dev/null | head -n 1)
-          SHIBOKEN_WHEEL=$(ls wheels/shiboken6-*.whl 2>/dev/null | head -n 1)
+          export ANDROID_SDK_ROOT=$HOME/android-sdk
+          export ANDROID_NDK_ROOT=$HOME/android-ndk-r25c
+          export PATH=$ANDROID_SDK_ROOT/cmdline-tools/bin:$ANDROID_SDK_ROOT/platform-tools:$PATH
           
-          if [ -z "$PYSIDE_WHEEL" ] || [ -z "$SHIBOKEN_WHEEL" ]; then
-            echo "❌ Error: Wheel files not found!"
-            echo "Available files in wheels/:"
-            ls -la wheels/
-            exit 1
+          # Find the tool
+          PYSIDE_TOOL=$(which pyside6-android-deploy 2>/dev/null || find /opt/hostedtoolcache/Python -name "pyside6-android-deploy" 2>/dev/null | head -1)
+          
+          if [ -z "$PYSIDE_TOOL" ]; then
+            echo "pyside6-android-deploy not found! Trying alternative..."
+            PYSIDE_TOOL=$(find ~/.local -name "pyside6-android-deploy" 2>/dev/null | head -1)
           fi
           
-          echo "✅ Using wheels:"
-          echo "PySide: $PYSIDE_WHEEL"
-          echo "Shiboken: $SHIBOKEN_WHEEL"
+          echo "Using tool: $PYSIDE_TOOL"
           
-          pyside6-android-deploy --force \
-            --wheel-pyside="$PYSIDE_WHEEL" \
-            --wheel-shiboken="$SHIBOKEN_WHEEL" \
-            --name="${{ env.APP_NAME }}" \
-            --entrypoint="main.py" \
-            --verbose
+          if [ -n "$PYSIDE_TOOL" ]; then
+            $PYSIDE_TOOL --force \
+              --name="${{ env.APP_NAME }}" \
+              --entrypoint="main.py" \
+              --verbose
+          else
+            echo "pyside6-android-deploy not found. Trying to use python -m..."
+            python -m PySide6.scripts.android_deploy --force \
+              --name="${{ env.APP_NAME }}" \
+              --entrypoint="main.py" \
+              --verbose
+          fi
 
-      - name: List generated files
+      - name: Find and upload APK
         run: |
-          echo "Current directory contents:"
-          ls -la
-          echo ""
-          echo "Looking for APK files:"
-          find . -name "*.apk" -type f
+          echo "Searching for APK files..."
+          find . -name "*.apk" -type f -exec ls -lh {} \;
+          
+          # Create a directory for artifacts
+          mkdir -p artifacts
+          find . -name "*.apk" -type f -exec cp {} artifacts/ \;
+          
+          if [ -z "$(ls -A artifacts)" ]; then
+            echo "No APK files found!"
+            echo "Build directory contents:"
+            ls -laR .
+          fi
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.APP_NAME }}-apk
-          path: |
-            **/bin/*.apk
-            **/dist/*.apk
-            **/*.apk
+          path: artifacts/*.apk
           if-no-files-found: warn
