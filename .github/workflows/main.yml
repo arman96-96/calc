@@ -43,46 +43,79 @@ jobs:
         run: |
           mkdir -p wheels
           cd wheels
-          # ✅ اصلاح نهایی: نام فایل‌ها در سرور Qt با حروف بزرگ شروع می‌شوند (PySide6 و Shiboken6)
+          
+          echo "=== دانلود فایل PySide6 ==="
           curl -fLO "https://download.qt.io/official_releases/QtForPython/pyside6/PySide6-${{ env.PYSIDE_VERSION }}-${{ env.PYSIDE_VERSION }}-cp311-cp311-android_aarch64.whl"
+          
+          echo "=== دانلود فایل Shiboken6 ==="
           curl -fLO "https://download.qt.io/official_releases/QtForPython/shiboken6/shiboken6-${{ env.PYSIDE_VERSION }}-${{ env.PYSIDE_VERSION }}-cp311-cp311-android_aarch64.whl"
           
-          echo "✅ فایل‌های دانلود شده:"
+          echo ""
+          echo "=== بررسی فایل‌های دانلود شده ==="
           ls -lh *.whl
+          
+          # ✅ بررسی اینکه فایل‌ها واقعاً دانلود شده‌اند
+          if [ ! -f "PySide6-${{ env.PYSIDE_VERSION }}-${{ env.PYSIDE_VERSION }}-cp311-cp311-android_aarch64.whl" ]; then
+            echo "❌ خطا: فایل PySide6 دانلود نشد!"
+            exit 1
+          fi
+          
+          if [ ! -f "shiboken6-${{ env.PYSIDE_VERSION }}-${{ env.PYSIDE_VERSION }}-cp311-cp311-android_aarch64.whl" ]; then
+            echo "❌ خطا: فایل shiboken6 دانلود نشد!"
+            exit 1
+          fi
+          
+          echo "✅ هر دو فایل با موفقیت دانلود شدند"
 
       - name: Prepare main.py
         run: |
           cp "${{ env.ENTRY_POINT }}" main.py
-          echo "Created main.py from calculator.py"
+          echo "✅ Created main.py from calculator.py"
 
       - name: Build APK
         run: |
-          set -x # نمایش تمام دستورات اجرایی برای دیباگ دقیق
-          set -e # توقف فوری در صورت بروز هرگونه خطا
+          set -x # نمایش تمام دستورات
           
           echo "=== شروع فرآیند ساخت APK ==="
-          # ✅ استفاده از --force برای رد کردن سوال محیط مجازی به روش رسمی و استاندارد
-          pyside6-android-deploy --force --verbose \
+          echo "Python version: $(python --version)"
+          echo "pyside6-android-deploy location: $(which pyside6-android-deploy)"
+          echo ""
+          
+          # ✅ تلاش برای build با --force
+          pyside6-android-deploy --force \
             --wheel-pyside="wheels/PySide6-${{ env.PYSIDE_VERSION }}-${{ env.PYSIDE_VERSION }}-cp311-cp311-android_aarch64.whl" \
             --wheel-shiboken="wheels/shiboken6-${{ env.PYSIDE_VERSION }}-${{ env.PYSIDE_VERSION }}-cp311-cp311-android_aarch64.whl" \
-            --name="${{ env.APP_NAME }}"
+            --name="${{ env.APP_NAME }}" 2>&1 | tee build_log.txt
           
-          echo "=== فرآیند ساخت به پایان رسید ==="
+          BUILD_EXIT_CODE=$?
+          echo ""
+          echo "=== Build exit code: $BUILD_EXIT_CODE ==="
+          
+          if [ $BUILD_EXIT_CODE -ne 0 ]; then
+            echo "❌ Build failed! Full log:"
+            cat build_log.txt
+            exit 1
+          fi
+          
+          echo "✅ Build completed successfully"
 
       - name: Debug and Find APK
         id: find_apk
         run: |
-          echo "🔍 جستجو برای فایل APK..."
+          echo "🔍 Searching for APK files..."
           APK_PATH=$(find . -type f -name "*.apk" -not -path "*/wheels/*" | head -n 1)
           
           if [ -z "$APK_PATH" ]; then
-            echo "❌ خطا: هیچ فایل APK ساخته نشد!"
-            echo "📂 ساختار پوشه‌ها برای بررسی:"
-            ls -laR . | grep -E "(\.apk|android-build|buildozer)" || echo "هیچ پوشه مرتبطی پیدا نشد."
+            echo "❌ ERROR: No APK file was generated!"
+            echo "📂 Full directory structure:"
+            find . -type f -name "*.apk" -o -name "*.aab" -o -type d -name "android-build" -o -type d -name "build"
+            echo ""
+            echo "📂 Current directory contents:"
+            ls -laR . | head -100
             exit 1
           fi
           
-          echo "✅ فایل APK با موفقیت پیدا شد: $APK_PATH"
+          echo "✅ Successfully found APK at: $APK_PATH"
           echo "apk_path=$APK_PATH" >> "$GITHUB_OUTPUT"
 
       - name: Upload APK
