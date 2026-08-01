@@ -79,11 +79,16 @@ jobs:
 
       - name: Build APK with pyside6-android-deploy
         run: |
+          set -o pipefail
+          # </dev/null یعنی اگر ابزار سؤالی بپرسد و منتظر ورودی بماند،
+          # بلافاصله EOF می‌گیرد و به‌جای هنگ کردن، خطای واضح می‌دهد که در لاگ می‌بینیم
           pyside6-android-deploy \
             --force \
+            -v \
             --wheel-pyside="wheels/PySide6-${PYSIDE_VERSION}-${PYSIDE_VERSION}-cp311-cp311-android_aarch64.whl" \
             --wheel-shiboken="wheels/shiboken6-${PYSIDE_VERSION}-${PYSIDE_VERSION}-cp311-cp311-android_aarch64.whl" \
-            --name="${APP_NAME}"
+            --name="${APP_NAME}" \
+            < /dev/null 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
 
       - name: Locate generated APK
         id: find_apk
@@ -101,6 +106,14 @@ jobs:
 
           echo "apk_path=$APK_PATH" >> "$GITHUB_OUTPUT"
           echo "Found package at: $APK_PATH"
+
+      - name: Upload build log (always, for debugging)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+          if-no-files-found: warn
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
