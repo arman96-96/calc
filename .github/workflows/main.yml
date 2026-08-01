@@ -1,57 +1,62 @@
-name: Build Android APK
-on: [workflow_dispatch]
+name: Build Kivy APK
+
+on:
+  push:
+    branches:
+      - main   # یا master، بسته به نام شاخه اصلی ریپازیتوری شما
+  workflow_dispatch: # اجازه می‌دهد به صورت دستی هم بیلد را اجرا کنید
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Setup Python
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.9'
-      
-      - name: Install buildozer
+          python-version: '3.11'
+
+      - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y git zip unzip openjdk-17-jdk
-          pip install buildozer
-      
-      - name: Build
-        run: |
-          # Create a simple Kivy app if no main.py exists
-          if [ ! -f main.py ]; then
-            echo "from kivy.app import App
-          from kivy.uix.button import Button
-          
-          class TestApp(App):
-              def build(self):
-                  return Button(text='Hello World!')
-          
-          TestApp().run()" > main.py
-          fi
-          
-          # Create buildozer.spec
-          cat > buildozer.spec << 'EOF'
-[app]
-title = TestApp
-package.name = testapp
-package.domain = org.example
-version = 0.1
-requirements = python3==3.9.0,kivy==2.2.1
-orientation = portrait
-android.api = 31
-android.ndk = 23b
+          sudo apt-get install -y \
+            build-essential \
+            git \
+            python3-pip \
+            python3-setuptools \
+            openjdk-17-jdk \
+            autoconf \
+            automake \
+            libtool \
+            pkg-config \
+            zlib1g-dev \
+            libncurses5-dev \
+            libncursesw5-dev \
+            libtinfo5 \
+            cmake \
+            libffi-dev \
+            libssl-dev \
+            libgstreamer1.0-dev \
+            gstreamer1.0-plugins-base \
+            gstreamer1.0-plugins-good
+          pip install --upgrade pip virtualenv
+          pip install buildozer cython==3.0.11
 
-[buildozer]
-log_level = 2
-EOF
-          
+      - name: Build APK with Buildozer
+        run: |
+          # اجرای بیلد. گزینه debug برای تست کافی است
+          # اگر می‌خواهید برای انتشار بسازید از android release استفاده کنید
           buildozer android debug
-      
-      - name: Upload
+        env:
+          # پذیرش خودکار لایسنس‌های اندروید برای جلوگیری از توقف بیلد
+          ANDROID_SDK_ROOT: /home/runner/.buildozer/android/platform/android-sdk
+
+      - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: app-apk
+          name: Kivy-App-APK
           path: bin/*.apk
+          retention-days: 7
