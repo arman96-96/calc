@@ -32,31 +32,22 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android NDK and pre-install SDK components
+      - name: Install Android NDK and SDK components
         run: |
-          # قبول لایسنس‌ها
           yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          
-          # نصب NDK و کامپوننت‌های ضروری با ابزار مدرن cmdline-tools
           sdkmanager --install "ndk;27.0.12077973" "platform-tools" "platforms;android-34" "build-tools;34.0.0"
-          
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973" >> $GITHUB_ENV
 
       - name: Neutralize legacy buildozer sdkmanager (CRITICAL FIX)
         run: |
-          # بیلدوزر به اشتباه سعی می‌کند از sdkmanager قدیمی و منسوخ‌شده استفاده کند که باعث هنگ کردن می‌شود.
-          # ما آن را با یک اسکریپت ساختگی جایگزین می‌کنیم که همیشه موفقیت‌آمیز برمی‌گردد.
+          echo "Replacing broken legacy sdkmanager with a dummy script..."
           rm -rf $ANDROID_HOME/tools
           mkdir -p $ANDROID_HOME/tools/bin
           echo '#!/bin/bash' > $ANDROID_HOME/tools/bin/sdkmanager
-          echo 'echo "Installed packages:"' >> $ANDROID_HOME/tools/bin/sdkmanager
-          echo 'echo "  platform-tools"' >> $ANDROID_HOME/tools/bin/sdkmanager
-          echo 'echo "  platforms;android-34"' >> $ANDROID_HOME/tools/bin/sdkmanager
-          echo 'echo "  build-tools;34.0.0"' >> $ANDROID_HOME/tools/bin/sdkmanager
-          echo 'echo "  ndk;27.0.12077973"' >> $ANDROID_HOME/tools/bin/sdkmanager
+          echo 'echo "Installed packages: platform-tools, platforms;android-34, build-tools;34.0.0, ndk;27.0.12077973"' >> $ANDROID_HOME/tools/bin/sdkmanager
           echo 'exit 0' >> $ANDROID_HOME/tools/bin/sdkmanager
           chmod +x $ANDROID_HOME/tools/bin/sdkmanager
-          echo "✅ Legacy sdkmanager neutralized."
+          echo "✅ Dummy sdkmanager created at $ANDROID_HOME/tools/bin/sdkmanager"
 
       - name: Install system dependencies
         run: |
@@ -112,19 +103,22 @@ jobs:
             --wheel-pyside="wheels/PySide6-${{ env.PYSIDE_VERSION }}-${{ env.PYSIDE_VERSION }}-cp311-cp311-android_aarch64.whl" \
             --wheel-shiboken="wheels/shiboken6-${{ env.PYSIDE_VERSION }}-${{ env.PYSIDE_VERSION }}-cp311-cp311-android_aarch64.whl" \
             --name="${{ env.APP_NAME }}" \
-            < /dev/null 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
+            2>&1 | tee "$GITHUB_WORKSPACE/build.log"
           
           echo "✅ Build command finished."
 
       - name: Locate generated APK
         id: find_apk
         run: |
+          echo "🔍 Searching for APK..."
           APK_PATH=$(find "$GITHUB_WORKSPACE" -type f \( -iname "*.apk" -o -iname "*.aab" \) -not -path "*/wheels/*" 2>/dev/null | head -n 1)
 
           if [ -z "$APK_PATH" ]; then
             echo "❌ هیچ فایل apk یا aab پیدا نشد."
-            echo "📂 ساختار پوشه‌ها:"
-            find "$GITHUB_WORKSPACE" -maxdepth 4 -type d | grep -v "\.git/"
+            echo "📂 لیست فایل‌ها و پوشه‌ها:"
+            find "$GITHUB_WORKSPACE" -maxdepth 3
+            echo "📄 محتوای build.log (۵۰ خط آخر):"
+            tail -n 50 "$GITHUB_WORKSPACE/build.log" || echo "build.log not found"
             exit 1
           fi
 
