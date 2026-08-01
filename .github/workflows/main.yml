@@ -10,8 +10,8 @@ env:
   # نسخه PySide6/Qt که هم wheel اندرویدی دارد و هم با pyside6-android-deploy سازگار است
   PYSIDE_VERSION: "6.10.3"
   APP_NAME: "calculator"
-  # فایل اصلی برنامه شما - در صورت نیاز تغییر دهید
-  ENTRY_POINT: "calculator.py"
+  # نام واقعی فایل برنامه‌ی شما در ریپو - اگر نامش چیز دیگری است همین را تغییر دهید
+  SOURCE_FILE: "calculator.py"
 
 jobs:
   build-apk:
@@ -53,6 +53,14 @@ jobs:
           echo "Requirements file: $REQ_FILE"
           pip install -r "$REQ_FILE"
 
+      - name: Prepare entry point as main.py
+        run: |
+          # pyside6-android-deploy به‌طور پیش‌فرض دنبال main.py می‌گردد
+          # و آرگومانی برای مشخص کردن نام فایل ورودی ندارد
+          if [ "${SOURCE_FILE}" != "main.py" ]; then
+            cp "${SOURCE_FILE}" main.py
+          fi
+
       - name: Download PySide6 / shiboken6 Android wheels (arm64-v8a)
         run: |
           mkdir -p wheels
@@ -66,8 +74,7 @@ jobs:
           pyside6-android-deploy \
             --wheel-pyside="wheels/PySide6-${PYSIDE_VERSION}-${PYSIDE_VERSION}-cp311-cp311-android_aarch64.whl" \
             --wheel-shiboken="wheels/shiboken6-${PYSIDE_VERSION}-${PYSIDE_VERSION}-cp311-cp311-android_aarch64.whl" \
-            --name="${APP_NAME}" \
-            --main-file="${ENTRY_POINT}"
+            --name="${APP_NAME}"
 
       - name: Locate generated APK
         id: find_apk
