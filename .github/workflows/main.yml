@@ -27,12 +27,13 @@ jobs:
           distribution: "temurin"
           java-version: "11"
 
-      - name: Install dependencies
+      - name: Install dependencies (fail fast)
         run: |
+          set -e
           python -m pip install --upgrade pip
-          pip install pyside6==${{ env.PYSIDE_VERSION }}
+          pip install -v "pyside6==${{ env.PYSIDE_VERSION }}"
 
-      - name: Show installed PySide6 version (debug)
+      - name: Verify pyside6 import
         run: |
           python -c "import pyside6; print('pyside6', pyside6.__version__)"
 
@@ -48,28 +49,26 @@ jobs:
 
           P="${{ env.PYSIDE_VERSION }}"
 
-          # Try cp310 first
           for CP in cp310 cp311; do
-            echo "Trying PySide/shiboken wheels with CP=${CP} ..."
+            echo "Trying CP=${CP} ..."
+
             U1="https://download.qt.io/official_releases/QtForPython/pyside6/PySide6-${P}-${P}-${CP}-${CP}-android_aarch64.whl"
             U2="https://download.qt.io/official_releases/QtForPython/shiboken6/shiboken6-${P}-${P}-${CP}-${CP}-android_aarch64.whl"
 
-            echo "Testing:"
             echo "$U1"
             echo "$U2"
 
             if curl -I -fL "$U1" >/dev/null 2>&1 && curl -I -fL "$U2" >/dev/null 2>&1; then
+              echo "Found wheels with CP=${CP}"
               cd wheels
               curl -fLO "$U1"
               curl -fLO "$U2"
               cd ..
-              echo "Found working wheels with CP=${CP}"
               exit 0
             fi
           done
 
           echo "Could not find matching PySide6+shiboken6 android_aarch64 wheels for version $P (tried cp310/cp311)."
-          echo "Failing to avoid running build with missing wheels."
           exit 1
 
       - name: Build APK
