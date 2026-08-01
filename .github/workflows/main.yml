@@ -1,17 +1,21 @@
 name: Build Android APK
 
+# اجرای دستی از تب Actions یا خودکار روی هر push به main
 on:
   workflow_dispatch:
   push:
     branches: [ main ]
 
 env:
+  # نسخه PySide6/Qt که هم wheel اندرویدی دارد و هم با pyside6-android-deploy سازگار است
   PYSIDE_VERSION: "6.10.3"
   APP_NAME: "calculator"
+  # فایل اصلی برنامه شما - در صورت نیاز تغییر دهید
   ENTRY_POINT: "calculator.py"
 
 jobs:
   build-apk:
+    # این کار فقط روی لینوکس اجرا می‌شود
     runs-on: ubuntu-latest
 
     steps:
@@ -29,82 +33,43 @@ jobs:
           distribution: "temurin"
           java-version: "17"
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android NDK
-        run: |
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager --install "ndk;27.0.12077973"
-          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973" >> $GITHUB_ENV
-
-      - name: Pre-install Android SDK components
-        run: |
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
-
-      - name: Create dummy sdkmanager for buildozer
-        run: |
-          rm -rf $ANDROID_HOME/tools
-          mkdir -p $ANDROID_HOME/tools/bin
-          echo '#!/bin/bash' > $ANDROID_HOME/tools/bin/sdkmanager
-          echo 'if [[ "$*" == *"--list"* ]] || [[ "$*" == *"--update"* ]]; then' >> $ANDROID_HOME/tools/bin/sdkmanager
-          echo '  echo "Installed packages:"' >> $ANDROID_HOME/tools/bin/sdkmanager
-          echo '  echo "  platform-tools"' >> $ANDROID_HOME/tools/bin/sdkmanager
-          echo '  echo "  platforms;android-34"' >> $ANDROID_HOME/tools/bin/sdkmanager
-          echo '  echo "  build-tools;34.0.0"' >> $ANDROID_HOME/tools/bin/sdkmanager
-          echo '  echo "  ndk;27.0.12077973"' >> $ANDROID_HOME/tools/bin/sdkmanager
-          echo 'else' >> $ANDROID_HOME/tools/bin/sdkmanager
-          echo '  echo "Dummy sdkmanager: $*"' >> $ANDROID_HOME/tools/bin/sdkmanager
-          echo 'fi' >> $ANDROID_HOME/tools/bin/sdkmanager
-          echo 'exit 0' >> $ANDROID_HOME/tools/bin/sdkmanager
-          chmod +x $ANDROID_HOME/tools/bin/sdkmanager
-          echo "Dummy sdkmanager created at $ANDROID_HOME/tools/bin/sdkmanager"
-          cat $ANDROID_HOME/tools/bin/sdkmanager
-
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential git unzip zip autoconf automake libtool pkg-config libffi-dev libssl-dev
+          sudo apt-get install -y \
+            build-essential git unzip zip \
+            autoconf automake libtool pkg-config \
+            libffi-dev libssl-dev
 
       - name: Install Python build tools
         run: |
           python -m pip install --upgrade pip
-          python -m pip install pyside6==${{ env.PYSIDE_VERSION }} buildozer cython jinja2 pkginfo tqdm
+          pip install pyside6==${{ env.PYSIDE_VERSION }} buildozer cython
 
-      - name: Download PySide6 Android wheels
+      - name: Download PySide6 / shiboken6 Android wheels (arm64-v8a)
         run: |
           mkdir -p wheels
           cd wheels
-          curl -fLO "https://download.qt.io/official_releases/QtForPython/pyside6/PySide6-${{ env.PYSIDE_VERSION }}-${{ env.PYSIDE_VERSION }}-cp311-cp311-android_aarch64.whl"
-          curl -fLO "https://download.qt.io/official_releases/QtForPython/shiboken6/shiboken6-${{ env.PYSIDE_VERSION }}-${{ env.PYSIDE_VERSION }}-cp311-cp311-android_aarch64.whl"
-          ls -lh *.whl
+          curl -fLO "https://download.qt.io/official_releases/QtForPython/pyside6/PySide6-${PYSIDE_VERSION}-${PYSIDE_VERSION}-cp311-cp311-android_aarch64.whl"
+          curl -fLO "https://download.qt.io/official_releases/QtForPython/shiboken6/shiboken6-${PYSIDE_VERSION}-${PYSIDE_VERSION}-cp311-cp311-android_aarch64.whl"
+          ls -la
 
-      - name: Prepare main.py
+      - name: Build APK with pyside6-android-deploy
         run: |
-          cp "${{ env.ENTRY_POINT }}" main.py
-          echo "Created main.py"
+          pyside6-android-deploy \
+            --wheel-pyside="wheels/PySide6-${PYSIDE_VERSION}-${PYSIDE_VERSION}-cp311-cp311-android_aarch64.whl" \
+            --wheel-shiboken="wheels/shiboken6-${PYSIDE_VERSION}-${PYSIDE_VERSION}-cp311-cp311-android_aarch64.whl" \
+            --name="${APP_NAME}" \
+            --main-file="${ENTRY_POINT}"
 
-      - name: Build APK
-        run: |
-          export JAVA_HOME=/usr/lib/jvm/temurin-8-jdk-amd64
-          export PATH=$JAVA_HOME/bin:$PATH
-          echo "Using Java: $(java -version 2>&1 | head -n 1)"
-          pyside6-android-deploy --force --verbose --sdk-path="$ANDROID_HOME" --ndk-path="$ANDROID_NDK_HOME" --wheel-pyside="wheels/PySide6-${{ env.PYSIDE_VERSION }}-${{ env.PYSIDE_VERSION }}-cp311-cp311-android_aarch64.whl" --wheel-shiboken="wheels/shiboken6-${{ env.PYSIDE_VERSION }}-${{ env.PYSIDE_VERSION }}-cp311-cp311-android_aarch64.whl" --name="${{ env.APP_NAME }}"
-
-      - name: Find APK
+      - name: Locate generated APK
         id: find_apk
         run: |
-          APK_PATH=$(find . -type f -name "*.apk" -not -path "*/wheels/*" | head -n 1)
-          if [ -z "$APK_PATH" ]; then
-            echo "No APK found"
-            find . -maxdepth 3 -type d
-            exit 1
-          fi
-          echo "APK found: $APK_PATH"
+          APK_PATH=$(find . -name "*.apk" -not -path "*/wheels/*" | head -n 1)
           echo "apk_path=$APK_PATH" >> "$GITHUB_OUTPUT"
+          echo "Found APK at: $APK_PATH"
 
-      - name: Upload APK
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.APP_NAME }}-apk
