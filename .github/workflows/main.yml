@@ -6,7 +6,7 @@ on:
     branches: [ main ]
 
 env:
-  PYSIDE_VERSION: "6.8.0.2"  # ✅ نسخه موجود
+  PYSIDE_VERSION: "6.8.0.2"
   APP_NAME: "calculator"
 
 jobs:
@@ -31,8 +31,6 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pyside6==${{ env.PYSIDE_VERSION }}
-          pip install buildozer==1.5.0 cython==0.29.33
-          pip install jinja2 pkginfo tqdm
 
       - name: Prepare main.py
         run: cp calculator.py main.py
@@ -51,10 +49,17 @@ jobs:
           pyside6-android-deploy --force \
             --wheel-pyside="wheels/PySide6-${{ env.PYSIDE_VERSION }}-${{ env.PYSIDE_VERSION }}-cp311-cp311-android_aarch64.whl" \
             --wheel-shiboken="wheels/shiboken6-${{ env.PYSIDE_VERSION }}-${{ env.PYSIDE_VERSION }}-cp311-cp311-android_aarch64.whl" \
-            --name="${{ env.APP_NAME }}"
+            --name="${{ env.APP_NAME }}" \
+            --entrypoint="main.py"
+
+      - name: List generated files
+        run: |
+          ls -R
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: calculator-apk
-          path: "**/*.apk"
+          path: |
+            **/dist/*.apk
+            **/*.apk
