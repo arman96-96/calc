@@ -6,55 +6,139 @@ on:
     branches: [ main ]
 
 env:
-  PYSIDE_VERSION: "6.8.0.2"  # نسخه پایدارتر
+  PYSIDE_VERSION: "6.10.3"
   APP_NAME: "calculator"
+  SOURCE_FILE: "calculator.py"
 
 jobs:
   build-apk:
-    runs-on: ubuntu-22.04  # نسخه قدیمی‌تر اوبونتو
+    runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Set up JDK 11  # جاوا ۱۱ به جای ۱۷
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: "temurin"
-          java-version: "11"
+          java-version: "17"
 
-      - name: Install dependencies
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK and SDK components
+        run: |
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager --install "ndk;27.0.12077973" "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973" >> $GITHUB_ENV
+
+      - name: Neutralize legacy buildozer sdkmanager (CRITICAL FIX)
+        run: |
+          echo "Replacing broken legacy sdkmanager with a dummy script..."
+          rm -rf $ANDROID_HOME/tools
+          mkdir -p $ANDROID_HOME/tools/bin
+          echo '#!/bin/bash' > $ANDROID_HOME/tools/bin/sdkmanager
+          echo 'echo "Installed packages: platform-tools, platforms;android-34, build-tools;34.0.0, ndk;27.0.12077973"' >> $ANDROID_HOME/tools/bin/sdkmanager
+          echo 'exit 0' >> $ANDROID_HOME/tools/bin/sdkmanager
+          chmod +x $ANDROID_HOME/tools/bin/sdkmanager
+          echo "✅ Dummy sdkmanager created at $ANDROID_HOME/tools/bin/sdkmanager"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential git unzip zip autoconf automake libtool pkg-config libffi-dev libssl-dev
+
+      - name: Create virtual environment
+        run: |
+          python -m venv .venv
+          echo "$(pwd)/.venv/bin" >> "$GITHUB_PATH"
+          echo "VIRTUAL_ENV=$(pwd)/.venv" >> "$GITHUB_ENV"
+
+      - name: Install Python build tools
         run: |
           python -m pip install --upgrade pip
-          pip install pyside6==${{ env.PYSIDE_VERSION }}
-          pip install buildozer==1.5.0 cython==0.29.33
-          pip install jinja2 pkginfo tqdm
+          pip install pyside6==${{ env.PYSIDE_VERSION }} buildozer cython
 
-      - name: Prepare main.py
-        run: cp calculator.py main.py
+      - name: Install pyside6-android-deploy requirements
+        run: |
+          REQ_FILE=$(python -c "import PySide6, os; print(os.path.join(os.path.dirname(PySide6.__file__), 'scripts', 'requirements-android.txt'))")
+          echo "Requirements file: $REQ_FILE"
+          pip install -r "$REQ_FILE"
 
-      - name: Download Android wheels
+      - name: Prepare entry point as main.py
+        run: |
+          if [ "${SOURCE_FILE}" != "main.py" ]; then
+            cp "${SOURCE_FILE}" main.py
+          fi
+          echo "✅ main.py is ready."
+
+      # ✅ اصلاح نهایی: استفاده از حروف کوچک در آدرس دانلود (pyside6 و shiboken6)
+      - name: Download PySide6 Android wheels
         run: |
           mkdir -p wheels
           cd wheels
-          curl -fLO "https://download.qt.io/official_releases/QtForPython/pyside6/PySide6-${{ env.PYSIDE_VERSION }}-${{ env.PYSIDE_VERSION }}-cp311-cp311-android_aarch64.whl"
+          curl -fLO "https://download.qt.io/official_releases/QtForPython/pyside6/pyside6-${{ env.PYSIDE_VERSION }}-${{ env.PYSIDE_VERSION }}-cp311-cp311-android_aarch64.whl"
           curl -fLO "https://download.qt.io/official_releases/QtForPython/shiboken6/shiboken6-${{ env.PYSIDE_VERSION }}-${{ env.PYSIDE_VERSION }}-cp311-cp311-android_aarch64.whl"
+          echo "✅ Downloaded files:"
+          ls -lh *.whl
 
       - name: Build APK
-        env:
-          VIRTUAL_ENV: "/tmp/fake_venv"
         run: |
-          pyside6-android-deploy --force \
-            --wheel-pyside="wheels/PySide6-${{ env.PYSIDE_VERSION }}-${{ env.PYSIDE_VERSION }}-cp311-cp311-android_aarch64.whl" \
+          set -e
+          set -o pipefail
+          
+          echo "=== Starting Build ==="
+          echo "SDK: $ANDROID_HOME"
+          echo "NDK: $ANDROID_NDK_HOME"
+          
+          # ✅ اصلاح نهایی: استفاده از حروف کوچک در نام فایل‌های آرگومان
+          pyside6-android-deploy \
+            --force \
+            -v \
+            --sdk-path="$ANDROID_HOME" \
+            --ndk-path="$ANDROID_NDK_HOME" \
+            --wheel-pyside="wheels/pyside6-${{ env.PYSIDE_VERSION }}-${{ env.PYSIDE_VERSION }}-cp311-cp311-android_aarch64.whl" \
             --wheel-shiboken="wheels/shiboken6-${{ env.PYSIDE_VERSION }}-${{ env.PYSIDE_VERSION }}-cp311-cp311-android_aarch64.whl" \
-            --name="${{ env.APP_NAME }}"
+            --name="${{ env.APP_NAME }}" \
+            2>&1 | tee "$GITHUB_WORKSPACE/build.log"
+          
+          echo "✅ Build command finished."
 
-      - name: Upload APK
+      - name: Locate generated APK
+        id: find_apk
+        run: |
+          echo "🔍 Searching for APK..."
+          APK_PATH=$(find "$GITHUB_WORKSPACE" -type f \( -iname "*.apk" -o -iname "*.aab" \) -not -path "*/wheels/*" 2>/dev/null | head -n 1)
+
+          if [ -z "$APK_PATH" ]; then
+            echo "❌ هیچ فایل apk یا aab پیدا نشد."
+            echo "📂 ساختار پوشه‌ها:"
+            find "$GITHUB_WORKSPACE" -maxdepth 3 -type d | grep -v "\.git/"
+            echo "📄 ۵۰ خط آخر build.log:"
+            tail -n 50 "$GITHUB_WORKSPACE/build.log" || echo "build.log not found"
+            exit 1
+          fi
+
+          echo "✅ Found package at: $APK_PATH"
+          echo "apk_path=$APK_PATH" >> "$GITHUB_OUTPUT"
+
+      - name: Upload build log
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: calculator-apk
-          path: "**/*.apk"
+          name: build-log
+          path: build.log
+          if-no-files-found: warn
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APP_NAME }}-apk
+          path: ${{ steps.find_apk.outputs.apk_path }}
+          if-no-files-found: error
