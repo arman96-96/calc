@@ -35,19 +35,34 @@ jobs:
       - name: Install Android NDK and SDK components
         run: |
           yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          # نصب واقعی کامپوننت‌ها با ابزار مدرن
           sdkmanager --install "ndk;27.0.12077973" "platform-tools" "platforms;android-34" "build-tools;34.0.0"
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973" >> $GITHUB_ENV
 
-      - name: Neutralize legacy buildozer sdkmanager (CRITICAL FIX)
+      - name: Neutralize legacy buildozer sdkmanager (SMART FIX)
         run: |
-          echo "Replacing broken legacy sdkmanager with a dummy script..."
+          echo "Creating smart dummy sdkmanager to satisfy buildozer parser..."
           rm -rf $ANDROID_HOME/tools
           mkdir -p $ANDROID_HOME/tools/bin
+          
+          # ساخت اسکریپتی که خروجی --list را دقیقاً شبیه‌سازی می‌کند
           echo '#!/bin/bash' > $ANDROID_HOME/tools/bin/sdkmanager
-          echo 'echo "Installed packages: platform-tools, platforms;android-34, build-tools;34.0.0, ndk;27.0.12077973"' >> $ANDROID_HOME/tools/bin/sdkmanager
+          echo 'if [[ "$*" == *"--list"* ]] || [[ "$*" == *"--update"* ]]; then' >> $ANDROID_HOME/tools/bin/sdkmanager
+          echo '  echo "Available Packages:"' >> $ANDROID_HOME/tools/bin/sdkmanager
+          echo '  echo "  build-tools;34.0.0                 | 34.0.0     | Android SDK Build-Tools 34"' >> $ANDROID_HOME/tools/bin/sdkmanager
+          echo '  echo "  platforms;android-34               | 4          | Android SDK Platform 34"' >> $ANDROID_HOME/tools/bin/sdkmanager
+          echo '  echo "Installed packages:"' >> $ANDROID_HOME/tools/bin/sdkmanager
+          echo '  echo "  build-tools;34.0.0"' >> $ANDROID_HOME/tools/bin/sdkmanager
+          echo '  echo "  platforms;android-34"' >> $ANDROID_HOME/tools/bin/sdkmanager
+          echo '  echo "  ndk;27.0.12077973"' >> $ANDROID_HOME/tools/bin/sdkmanager
+          echo '  echo "  platform-tools"' >> $ANDROID_HOME/tools/bin/sdkmanager
+          echo 'else' >> $ANDROID_HOME/tools/bin/sdkmanager
+          echo '  echo "Dummy sdkmanager executed: $*"' >> $ANDROID_HOME/tools/bin/sdkmanager
+          echo 'fi' >> $ANDROID_HOME/tools/bin/sdkmanager
           echo 'exit 0' >> $ANDROID_HOME/tools/bin/sdkmanager
+          
           chmod +x $ANDROID_HOME/tools/bin/sdkmanager
-          echo "✅ Dummy sdkmanager created at $ANDROID_HOME/tools/bin/sdkmanager"
+          echo "✅ Smart dummy sdkmanager created successfully."
 
       - name: Install system dependencies
         run: |
@@ -115,9 +130,9 @@ jobs:
 
           if [ -z "$APK_PATH" ]; then
             echo "❌ هیچ فایل apk یا aab پیدا نشد."
-            echo "📂 لیست فایل‌ها و پوشه‌ها:"
-            find "$GITHUB_WORKSPACE" -maxdepth 3
-            echo "📄 محتوای build.log (۵۰ خط آخر):"
+            echo "📂 ساختار پوشه‌ها:"
+            find "$GITHUB_WORKSPACE" -maxdepth 3 -type d | grep -v "\.git/"
+            echo "📄 ۵۰ خط آخر build.log:"
             tail -n 50 "$GITHUB_WORKSPACE/build.log" || echo "build.log not found"
             exit 1
           fi
