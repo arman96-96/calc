@@ -88,9 +88,19 @@ jobs:
       - name: Locate generated APK
         id: find_apk
         run: |
-          APK_PATH=$(find . -name "*.apk" -not -path "*/wheels/*" | head -n 1)
+          # جست‌وجو در کل مسیر workspace، نه فقط پوشه فعلی
+          APK_PATH=$(find "$GITHUB_WORKSPACE" -type f \( -iname "*.apk" -o -iname "*.aab" \) -not -path "*/wheels/*" 2>/dev/null | head -n 1)
+
+          if [ -z "$APK_PATH" ]; then
+            echo "هیچ فایل apk یا aab پیدا نشد. لیست فایل‌های ساخته‌شده برای بررسی:"
+            find "$GITHUB_WORKSPACE" -maxdepth 4 -type d
+            echo "---"
+            find "$GITHUB_WORKSPACE" -iname "*.apk" -o -iname "*.aab" -o -iname "*.log"
+            exit 1
+          fi
+
           echo "apk_path=$APK_PATH" >> "$GITHUB_OUTPUT"
-          echo "Found APK at: $APK_PATH"
+          echo "Found package at: $APK_PATH"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
