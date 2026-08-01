@@ -32,20 +32,74 @@ jobs:
 
       - name: Upgrade pip
         run: |
+          set -e
           python -m pip install --upgrade pip
 
-      - name: Install PySide6 (with full logs)
+      - name: Install PySide6 (fail fast)
         run: |
           set -e
           pip install -v "pyside6==${{ env.PYSIDE_VERSION }}"
 
-      - name: Verify install (show details)
+      - name: Show pip package info after install
         run: |
           set -e
-          python -m pip show pyside6
+          python -c "import sys, site; print('sys.executable=', sys.executable); print('site-packages=', site.getsitepackages()); print('user-site=', site.getusersitepackages())"
+          python -m pip show pyside6 || true
           python -m pip list | grep -i pyside || true
+          python -c "import pkgutil; print('has pyside6?', any(m.name=='pyside6' for m in pkgutil.iter_modules()))"
 
       - name: Verify pyside6 import
         run: |
           set -e
           python -c "import pyside6; print('pyside6', pyside6.__version__)"
+
+      - name: Download Android wheels (try cp310/cp311)
+        run: |
+          set -e
+          mkdir -p wheels
+          P="${{ env.PYSIDE_VERSION }}"
+
+          for CP in cp310 cp311; do
+            echo "Trying CP=${CP}"
+            U1="https://download.qt.io/official_releases/QtForPython/pyside6/PySide6-${P}-${P}-${CP}-${CP}-android_aarch64.whl"
+            U2="https://download.qt.io/official_releases/QtForPython/shiboken6/shiboken6-${P}-${P}-${CP}-${CP}-android_aarch64.whl"
+
+            if curl -I -fL "$U1" >/dev/null 2>&1 && curl -I -fL "$U2" >/dev/null 2>&1; then
+              echo "Found wheels with CP=${CP}"
+              cd wheels
+              curl -fLO "$U1"
+              curl -fLO "$U2"
+              cd ..
+              break
+            fi
+          done
+
+          ls -la wheels
+
+      - name: Build APK
+        env:
+          VIRTUAL_ENV: "/tmp/fake_venv"
+        run: |
+          set -e
+          pyside_wheel="$(ls -1 wheels/PySide6-*.whl | head -n 1)"
+          shiboken_wheel="$(ls -1 wheels/shiboken6-*.whl | head -n 1)"
+          echo "Using wheels:"
+          echo "$pyside_wheel"
+          echo "$shiboken_wheel"
+
+          pyside6-android-deploy --force \
+            --wheel-pyside="$pyside_wheel" \
+            --wheel-shiboken="$shiboken_wheel" \
+            --name="${{ env.APP_NAME }}" \
+            --entrypoint="main.py"
+
+      - name: List generated files
+        run: ls -R
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: calculator-apk
+          path: |
+            **/dist/*.apk
+            **/*.apk
