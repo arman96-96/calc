@@ -13,11 +13,77 @@ jobs:
         with:
           python-version: '3.9'
       
-      - name: Install buildozer
+      - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y git zip unzip openjdk-17-jdk
+          sudo apt-get install -y \
+            git zip unzip \
+            openjdk-17-jdk \
+            autoconf libtool \
+            pkg-config zlib1g-dev \
+            libncurses5-dev \
+            libffi-dev libssl-dev \
+            cmake \
+            wget
+      
+      - name: Install Android SDK and Build Tools
+        run: |
+          # نصب Android SDK
+          mkdir -p $HOME/android-sdk
+          cd $HOME/android-sdk
+          
+          # دانلود Command Line Tools
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+          unzip -q commandlinetools-linux-11076708_latest.zip
+          rm commandlinetools-linux-11076708_latest.zip
+          
+          # تنظیم مسیر
+          export PATH=$PATH:$HOME/android-sdk/cmdline-tools/bin
+          export ANDROID_SDK_ROOT=$HOME/android-sdk
+          
+          # پذیرش مجوزها
+          yes | sdkmanager --licenses --sdk_root=$ANDROID_SDK_ROOT > /dev/null 2>&1
+          
+          # نصب Build Tools و Platform Tools
+          sdkmanager --sdk_root=$ANDROID_SDK_ROOT "platform-tools" "platforms;android-31" "build-tools;31.0.0"
+          
+          echo "ANDROID_SDK_ROOT=$HOME/android-sdk" >> $GITHUB_ENV
+          echo "$HOME/android-sdk/platform-tools" >> $GITHUB_PATH
+          echo "$HOME/android-sdk/build-tools/31.0.0" >> $GITHUB_PATH
+          echo "$HOME/android-sdk/cmdline-tools/bin" >> $GITHUB_PATH
+      
+      - name: Install buildozer
+        run: |
+          pip install --upgrade pip
           pip install buildozer
+      
+      - name: Create main.py
+        run: |
+          cat > main.py << 'EOF'
+          from kivy.app import App
+          from kivy.uix.button import Button
+          from kivy.uix.boxlayout import BoxLayout
+          from kivy.uix.label import Label
+          
+          class CalculatorApp(App):
+              def build(self):
+                  layout = BoxLayout(orientation='vertical', padding=20, spacing=10)
+                  self.label = Label(text='Calculator', font_size='30sp')
+                  layout.add_widget(self.label)
+                  
+                  for i in range(1, 10):
+                      btn = Button(text=str(i), size_hint_y=None, height=50)
+                      btn.bind(on_press=self.on_button_press)
+                      layout.add_widget(btn)
+                  
+                  return layout
+              
+              def on_button_press(self, instance):
+                  self.label.text = f'Pressed: {instance.text}'
+          
+          if __name__ == '__main__':
+              CalculatorApp().run()
+          EOF
       
       - name: Create buildozer.spec
         run: |
@@ -35,6 +101,7 @@ jobs:
           android.api = 31
           android.ndk = 23b
           android.minapi = 21
+          android.sdk_path = $HOME/android-sdk
           
           [buildozer]
           log_level = 2
@@ -43,14 +110,8 @@ jobs:
       
       - name: Build APK
         run: |
-          # بررسی وجود main.py
-          if [ ! -f "main.py" ]; then
-            echo "Error: main.py not found!"
-            echo "Files in current directory:"
-            ls -la
-            exit 1
-          fi
-          echo "✅ main.py found"
+          export ANDROID_SDK_ROOT=$HOME/android-sdk
+          export PATH=$PATH:$ANDROID_SDK_ROOT/platform-tools:$ANDROID_SDK_ROOT/build-tools/31.0.0:$ANDROID_SDK_ROOT/cmdline-tools/bin
           buildozer android debug
       
       - name: Upload APK
