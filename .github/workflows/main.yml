@@ -1,4 +1,4 @@
-name: Build Simple Android APK
+name: Build Android APK
 
 on:
   workflow_dispatch:
@@ -17,16 +17,15 @@ jobs:
         with:
           python-version: "3.9"
 
-      - name: Install Buildozer
+      - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y git zip unzip openjdk-17-jdk autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev
           pip install --upgrade pip
           pip install buildozer cython
 
-      - name: Create Kivy app (no PySide)
+      - name: Prepare main.py
         run: |
-          # اگر فایل اصلی وجود ندارد، یک برنامه ساده Kivy بسازیم
           if [ ! -f "main.py" ]; then
             cat > main.py << 'EOF'
 from kivy.app import App
@@ -37,7 +36,6 @@ from kivy.uix.label import Label
 class CalculatorApp(App):
     def build(self):
         layout = BoxLayout(orientation='vertical', padding=20, spacing=10)
-        
         self.label = Label(text="Calculator", font_size='30sp')
         layout.add_widget(self.label)
         
@@ -56,39 +54,30 @@ if __name__ == '__main__':
 EOF
           fi
 
-      - name: Create buildozer.spec for Kivy
+      - name: Create buildozer.spec
         run: |
           cat > buildozer.spec << 'EOF'
-          [app]
-          title = Calculator
-          package.name = calculator
-          package.domain = org.example
-          source.dir = .
-          source.include_exts = py,png,jpg,kv,atlas
-          version = 0.1
-          requirements = python3==3.9.0,kivy==2.2.1
-          orientation = portrait
-          android.api = 31
-          android.ndk = 23b
-          android.minapi = 21
-          
-          [buildozer]
-          log_level = 2
-          warn_on_root = 1
-          EOF
+[app]
+title = Calculator
+package.name = calculator
+package.domain = org.example
+source.dir = .
+source.include_exts = py,png,jpg,kv,atlas
+version = 0.1
+requirements = python3==3.9.0,kivy==2.2.1
+orientation = portrait
+android.api = 31
+android.ndk = 23b
+android.minapi = 21
+
+[buildozer]
+log_level = 2
+warn_on_root = 1
+EOF
 
       - name: Build APK
         run: |
           buildozer android debug
-          
-          echo "Build completed. Looking for APK..."
-          if [ -f bin/*.apk ]; then
-            echo "APK found!"
-            ls -la bin/
-          else
-            echo "No APK found. Showing logs..."
-            find . -name "*.log" -exec cat {} \;
-          fi
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
