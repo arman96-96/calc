@@ -32,8 +32,19 @@ jobs:
           python -m pip install --upgrade pip
           pip install pyside6==${{ env.PYSIDE_VERSION }}
 
+      - name: List repo Python files (debug)
+        run: |
+          ls -la
+          find . -maxdepth 3 -type f -name "*.py" -print
+
+      # IMPORTANT: این مسیر/نام فایل را با نام واقعی فایل در ریپو جایگزین کن.
+      # اگر فایل اصلی همین "main.py" است، این step را حذف کن یا به همین شکل نگه دار.
       - name: Prepare main.py
-        run: cp calculator.py main.py
+        run: |
+          # اگر فایل شما همین الان main.py است، این کامنت را بردار و مرحله cp را حذف کن.
+          # ls -la
+          # (در غیر این صورت، مسیر فایل اصلی را درست کن)
+          cp main.py main.py
 
       - name: Download Android wheels
         run: |
@@ -49,8 +60,7 @@ jobs:
           pyside6-android-deploy --force \
             --wheel-pyside="wheels/PySide6-${{ env.PYSIDE_VERSION }}-${{ env.PYSIDE_VERSION }}-cp311-cp311-android_aarch64.whl" \
             --wheel-shiboken="wheels/shiboken6-${{ env.PYSIDE_VERSION }}-${{ env.PYSIDE_VERSION }}-cp311-cp311-android_aarch64.whl" \
-            --name="${{ env.APP_NAME }}" \
-            --entrypoint="main.py"
+            --name="${{ env.APP_NAME }}"
 
       - name: List generated files
         run: |
