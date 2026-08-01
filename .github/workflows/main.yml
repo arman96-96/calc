@@ -46,6 +46,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install pyside6==${{ env.PYSIDE_VERSION }} buildozer cython
 
+      - name: Install pyside6-android-deploy requirements
+        run: |
+          # این پکیج‌ها را خود اسکریپت deploy می‌خواهد و به‌صورت پیش‌فرض نصب نیستند
+          REQ_FILE=$(python -c "import PySide6, os; print(os.path.join(os.path.dirname(PySide6.__file__), 'scripts', 'requirements-android.txt'))")
+          echo "Requirements file: $REQ_FILE"
+          pip install -r "$REQ_FILE"
+
       - name: Download PySide6 / shiboken6 Android wheels (arm64-v8a)
         run: |
           mkdir -p wheels
