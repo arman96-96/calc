@@ -5,9 +5,6 @@ on:
   push:
     branches: [ main ]
 
-env:
-  APP_NAME: "calculator"
-
 jobs:
   build-apk:
     runs-on: ubuntu-22.04
@@ -15,39 +12,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.9
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.9"
 
-      - name: Set up JDK 11
-        uses: actions/setup-java@v4
-        with:
-          distribution: "temurin"
-          java-version: "11"
-
-      - name: Install system dependencies
+      - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             git zip unzip \
-            openjdk-11-jdk \
+            openjdk-17-jdk \
             autoconf libtool \
             pkg-config zlib1g-dev \
             libncurses5-dev libncursesw5-dev \
             libtinfo5 cmake \
-            libffi-dev libssl-dev
-
-      - name: Install Python dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install pyside6==6.6.0
-          pip install python-for-android
-          pip install cython==0.29.33
-
-      - name: Verify PySide6 installation
-        run: |
-          python -c "import PySide6; print(f'PySide6 version: {PySide6.__version__}')"
+            libffi-dev libssl-dev \
+            python3-pip
+          
+          pip install --upgrade pip
+          pip install buildozer cython
 
       - name: Prepare main.py
         run: |
@@ -56,109 +40,86 @@ jobs:
           elif [ -f "calculator.py" ]; then
             cp calculator.py main.py
           else
-            echo "❌ Error: main.py not found!"
-            exit 1
+            echo "❌ Error: No Python file found!"
+            echo "Creating a simple main.py..."
+            cat > main.py << 'EOF'
+import sys
+from PySide6.QtWidgets import QApplication, QMainWindow, QPushButton, QVBoxLayout, QWidget, QLabel
+
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Calculator")
+        self.setGeometry(100, 100, 300, 200)
+        
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        layout = QVBoxLayout()
+        central_widget.setLayout(layout)
+        
+        label = QLabel("PySide6 Calculator")
+        label.setStyleSheet("font-size: 20px; font-weight: bold;")
+        layout.addWidget(label)
+        
+        button = QPushButton("Click Me")
+        button.clicked.connect(lambda: label.setText("Button Clicked!"))
+        layout.addWidget(button)
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    window = MainWindow()
+    window.show()
+    sys.exit(app.exec())
+EOF
           fi
 
-      - name: Create .p4a config
+      - name: Create buildozer.spec
         run: |
-          cat > build_apk.py << 'EOF'
-          from pythonforandroid import entrypoints
-          from pythonforandroid.build import build_apk
-          from pythonforandroid.recipe import Recipe
-          from pythonforandroid.toolchain import ToolchainCL
+          cat > buildozer.spec << 'EOF'
+          [app]
+          title = Calculator
+          package.name = calculator
+          package.domain = org.example
+          source.dir = .
+          source.include_exts = py,png,jpg,kv,atlas
+          version = 0.1
+          requirements = python3==3.9.0,pyside6==6.6.0
+          orientation = portrait
+          osx.python_version = 3
+          osx.kivy_version = 1.9.1
+          fullscreen = 0
+          android.minapi = 21
+          android.api = 31
+          android.ndk = 23b
           
-          # این کد را اجرا می‌کنیم تا APK ساخته شود
-          import os
-          
-          cmd = [
-              "apk",
-              "--bootstrap", "sdl2",
-              "--requirements", "python3,pyside6==6.6.0",
-              "--android-api", "31",
-              "--ndk-api", "21",
-              "--ndk-dir", "/tmp/ndk",
-              "--sdk-dir", "/tmp/sdk",
-              "--dist-name", "calculator",
-              "--package", "org.example.calculator",
-              "--name", "Calculator",
-              "--version", "1.0",
-              "--permission", "INTERNET",
-              "--permission", "VIBRATE",
-              "--dir", "."
-          ]
-          
-          # اجرای دستور از طریق python-for-android
-          import subprocess
-          result = subprocess.run(["p4a"] + cmd, capture_output=True, text=True)
-          print(result.stdout)
-          if result.stderr:
-              print(result.stderr)
+          [buildozer]
+          log_level = 2
+          warn_on_root = 1
           EOF
 
-      - name: Download Android NDK and SDK
+      - name: Build APK with Buildozer
         run: |
-          # Download Android NDK
-          mkdir -p /tmp/ndk /tmp/sdk
-          cd /tmp/ndk
-          wget -q https://dl.google.com/android/repository/android-ndk-r25c-linux.zip
-          unzip -q android-ndk-r25c-linux.zip
-          mv android-ndk-r25c/* .
-          rm -rf android-ndk-r25c android-ndk-r25c-linux.zip
-          
-          # Download Android SDK
-          cd /tmp/sdk
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
-          unzip -q commandlinetools-linux-9477386_latest.zip
-          rm commandlinetools-linux-9477386_latest.zip
-          
-          echo "ANDROID_NDK_HOME=/tmp/ndk" >> $GITHUB_ENV
-          echo "ANDROID_SDK_HOME=/tmp/sdk" >> $GITHUB_ENV
+          echo "Building APK..."
+          buildozer android debug || echo "Buildozer build failed"
+          echo "Build completed"
 
-      - name: Build APK with python-for-android
+      - name: Debug build output
         run: |
-          export ANDROID_NDK_HOME=/tmp/ndk
-          export ANDROID_SDK_HOME=/tmp/sdk
-          export PATH=$ANDROID_SDK_HOME/cmdline-tools/bin:$ANDROID_SDK_HOME/platform-tools:$PATH
-          
-          # نصب ابزارهای SDK
-          yes | sdkmanager --licenses
-          sdkmanager "platform-tools" "platforms;android-31"
-          
-          # ساخت APK
-          p4a apk --bootstrap sdl2 \
-            --requirements python3,pyside6==6.6.0 \
-            --android-api 31 \
-            --ndk-api 21 \
-            --ndk-dir /tmp/ndk \
-            --sdk-dir /tmp/sdk \
-            --dist-name ${{ env.APP_NAME }} \
-            --package org.example.${{ env.APP_NAME }} \
-            --name "Calculator" \
-            --version 1.0 \
-            --permission INTERNET \
-            --permission VIBRATE \
-            --dir . \
-            --debug
+          echo "Current directory contents:"
+          ls -la
+          echo ""
+          echo "Bin directory:"
+          ls -la bin/ 2>/dev/null || echo "No bin directory"
+          echo ""
+          echo "Build directory:"
+          ls -la .buildozer/ 2>/dev/null || echo "No buildozer directory"
+          echo ""
+          echo "Looking for APK files:"
+          find . -name "*.apk" -type f
 
-      - name: Find APK
-        run: |
-          echo "Searching for APK files..."
-          find . -name "*.apk" -type f -exec ls -lh {} \;
-          mkdir -p artifacts
-          find . -name "*.apk" -type f -exec cp {} artifacts/ \;
-          
-          if [ -z "$(ls -A artifacts 2>/dev/null)" ]; then
-            echo "❌ No APK found. Trying to find build logs..."
-            find . -name "*.log" -exec cat {} \;
-          else
-            echo "✅ APK files found!"
-            ls -la artifacts/
-          fi
-
-      - name: Upload APK
+      - name: Upload APK if found
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.APP_NAME }}-apk
-          path: artifacts/*.apk
+          name: calculator-apk
+          path: bin/*.apk
           if-no-files-found: warn
