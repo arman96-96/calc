@@ -21,7 +21,7 @@ jobs:
       - name: Install buildozer
         run: |
           pip install --upgrade pip
-          pip install buildozer
+          pip install buildozer cython
       
       - name: Create main.py
         run: |
@@ -68,16 +68,39 @@ jobs:
           android.ndk = 23b
           android.minapi = 21
           android.accept_sdk_license = True
+          android.gradle_dependencies = 
           
           [buildozer]
           log_level = 2
           warn_on_root = 1
           EOF
       
-      - name: Build APK
+      - name: Clean buildozer cache
         run: |
-          # Buildozer خودش SDK را مدیریت می‌کند
-          buildozer android debug --verbose
+          rm -rf .buildozer || true
+          rm -rf ~/.buildozer || true
+      
+      - name: Build APK with full logs
+        run: |
+          buildozer android debug --verbose 2>&1 | tee build.log
+          
+          # اگر خطا داشت، لاگ کامل را نمایش بده
+          if [ $? -ne 0 ]; then
+            echo "=== BUILD FAILED ==="
+            echo "Last 100 lines of build log:"
+            tail -n 100 build.log
+            echo ""
+            echo "Searching for errors in log:"
+            grep -i "error\|failed\|exception" build.log || echo "No obvious errors found"
+            exit 1
+          fi
+      
+      - name: Upload build log (if failed)
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: build-log
+          path: build.log
       
       - name: Upload APK
         uses: actions/upload-artifact@v4
